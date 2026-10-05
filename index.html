@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>从 Java 到移动端 · 交互式学习软件</title>
+  <meta name="description" content="从零开始学 Java，再进阶到 Android 移动开发的交互式课程：20 章讲解 + 测验 + 编程练习 + 6 个实战项目。" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <div class="topbar" id="topbar"></div>
+      <main class="main-inner" id="content">
+        <div class="card">
+          <div class="card-title">正在加载课程内容…</div>
+          <p class="muted small">如果长时间停在这里，请确认 <code>content</code> 目录下的 JS 文件与 <code>index.html</code> 在一起，然后用浏览器重新打开本页面。</p>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="toast-host" id="toastHost"></div>
+
+  <noscript>
+    <div style="padding:24px;font-family:sans-serif">这个学习软件需要启用 JavaScript 才能运行，请在浏览器设置里打开 JavaScript 后刷新页面。</div>
+  </noscript>
+
+  <!-- 课程内容数据 -->
+  <script src="content/java-course-a.js"></script>
+  <script src="content/java-course-b.js"></script>
+  <script src="content/java-course-c.js"></script>
+  <script src="content/java-course-d.js"></script>
+  <script src="content/java-course-e.js"></script>
+  <script src="content/java-course-f.js"></script>
+  <script src="content/java-course-g.js"></script>
+  <script src="content/java-course-h.js"></script>
+  <script src="content/mobile-course-a.js"></script>
+  <script src="content/mobile-course-b.js"></script>
+  <script src="content/mobile-course-c.js"></script>
+  <script src="content/mobile-course-d.js"></script>
+  <script src="content/mobile-course-e.js"></script>
+  <script src="content/mobile-course-f.js"></script>
+  <script src="content/mobile-course-g.js"></script>
+  <script src="content/projects.js"></script>
+  <script src="content/cheatsheet.js"></script>
+
+  <!-- 应用逻辑 -->
+  <script src="assets/java-runner.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
