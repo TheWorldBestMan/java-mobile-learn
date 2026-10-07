@@ -397,6 +397,48 @@
         else mp.m.set(k, args[2](mp.m.get(k), args[1]));
         return mp.m.get(k);
       }
+      case 'compute': {
+        const k = toKey(args[0]);
+        const old = mp.m.get(k);
+        const nv = args[1](args[0], old === undefined ? null : old);
+        if (nv === null || nv === undefined) mp.m.delete(k); else mp.m.set(k, nv);
+        const cur = mp.m.get(k);
+        return cur === undefined ? null : cur;
+      }
+      case 'computeIfPresent': {
+        const k = toKey(args[0]);
+        if (mp.m.has(k) && mp.m.get(k) !== undefined) {
+          const nv = args[1](args[0], mp.m.get(k));
+          if (nv === null || nv === undefined) mp.m.delete(k); else mp.m.set(k, nv);
+        }
+        const cur = mp.m.get(k);
+        return cur === undefined ? null : cur;
+      }
+      case 'replaceAll': {
+        const pair = [];
+        mp.m.forEach(function (v, k) { pair.push([k, v]); });
+        pair.forEach(function (kv) { mp.m.set(kv[0], args[0](kv[0], kv[1])); });
+        return undefined;
+      }
+      case 'replace': {
+        const k = toKey(args[0]);
+        if (!mp.m.has(k)) return args.length > 2 ? false : null;
+        if (args.length > 2) { if (mp.m.get(k) === args[1]) { mp.m.set(k, args[2]); return true; } return false; }
+        mp.m.set(k, args[1]);
+        return mp.m.get(k);
+      }
+      case 'containsValue': {
+        let found = false;
+        mp.m.forEach(function (v) { if (v === args[0]) found = true; });
+        return found;
+      }
+      case 'isEmpty': return mp.m.size === 0;
+      case 'clear': mp.m.clear(); return undefined;
+      case 'putAll': {
+        const srcMap = args[0];
+        if (srcMap && srcMap.__kind === 'map') srcMap.m.forEach(function (v, k) { mp.m.set(k, v); });
+        return undefined;
+      }
       case 'containsKey': return mp.m.has(toKey(args[0]));
       case 'size': return mp.m.size;
       case 'remove': { const k = toKey(args[0]); const v = mp.m.get(k); mp.m.delete(k); return v === undefined ? null : v; }
@@ -405,7 +447,7 @@
       case 'entrySet': {
         const l = makeList();
         mp.m.forEach(function (v, k) {
-          l.a.push({ getKey: function () { return k; }, getValue: function () { return v; } });
+          l.a.push(makeMapEntry(k, v));
         });
         return l;
       }
@@ -532,6 +574,7 @@
   };
 
   const StringStatics = {
+    __staticHolder: true,
     valueOf: function (x) { return x == null ? 'null' : toJavaString(x); },
     format: function (fmt) { return javaFormat(String(fmt), Array.prototype.slice.call(arguments, 1)); },
     join: function (d) {
@@ -542,6 +585,10 @@
   };
 
   const IntegerObj = {
+    __staticHolder: true,
+    sum: function (a, b) { return num(a) + num(b); },
+    max: function (a, b) { return Math.max(num(a), num(b)); },
+    min: function (a, b) { return Math.min(num(a), num(b)); },
     parseInt: function (s) { const r = parseInt(String(s).trim(), 10); if (isNaN(r)) throw exc('NumberFormatException', 'For input string: "' + s + '"'); return r; },
     compare: function (a, b) { return (num(a) > num(b)) - (num(a) < num(b)); },
     valueOf: function (s) { return IntegerObj.parseInt(s); },
@@ -549,12 +596,18 @@
   };
 
   const DoubleObj = {
+    __staticHolder: true,
+    sum: function (a, b) { return num(a) + num(b); },
+    max: function (a, b) { return Math.max(num(a), num(b)); },
+    min: function (a, b) { return Math.min(num(a), num(b)); },
+    compare: function (a, b) { return (num(a) > num(b)) - (num(a) < num(b)); },
     parseDouble: function (s) { const r = parseFloat(String(s).trim()); if (isNaN(r)) throw exc('NumberFormatException', 'For input string: "' + s + '"'); return r; },
     valueOf: function (s) { return DoubleObj.parseDouble(s); },
     MAX_VALUE: Number.MAX_VALUE
   };
 
   const BooleanObj = {
+    __staticHolder: true,
     parseBoolean: function (s) { return String(s) === 'true'; },
     valueOf: function (s) { return BooleanObj.parseBoolean(s); }
   };
@@ -667,9 +720,29 @@
     of: function () { const s = makeSet(); Array.prototype.slice.call(arguments).forEach(function (x) { s.s.add(toKey(x)); }); return s; },
     copyOf: function (st) { const s = makeSet(); if (st && st.__kind === 'set') st.s.forEach(function (x) { s.s.add(x); }); return s; }
   };
+  function makeMapEntry(k, v) {
+    return { getKey: function () { return k; }, getValue: function () { return v; } };
+  }
   const MapStatics = {
-    of: function () { return makeMap(); },
-    entry: function (k, v) { return { getKey: function () { return k; }, getValue: function () { return v; } }; }
+    __staticHolder: true,
+    // Map.of("a",1,"b",2)：成对传参，注意是不可变 Map
+    of: function () {
+      const m = makeMap();
+      const a = Array.prototype.slice.call(arguments);
+      for (let i = 0; i + 1 < a.length; i += 2) m.m.set(toKey(a[i]), a[i + 1]);
+      return m;
+    },
+    ofEntries: function () {
+      const m = makeMap();
+      Array.prototype.slice.call(arguments).forEach(function (e) { m.m.set(toKey(e.getKey()), e.getValue()); });
+      return m;
+    },
+    entry: makeMapEntry,
+    // Map.Entry.comparingByKey() / comparingByValue()：给 entrySet 排序用
+    Entry: {
+      comparingByKey: function () { return makeComparator(function (a, b) { return compareNatural(a.getKey(), b.getKey()); }); },
+      comparingByValue: function () { return makeComparator(function (a, b) { return compareNatural(a.getValue(), b.getValue()); }); }
+    }
   };
 
   function makeComparator(c) {
@@ -920,23 +993,53 @@
     return {
       __clsObj: true, name: name, sup: null, interfaces: [], isAbstract: false, isInterface: false,
       fields: [], statics: new Map(), methods: new Map(), ctors: [], nested: {}
-      , staticBlocks: []
+      , staticBlocks: [], instBlocks: []
     };
   }
   function makeMethod(name) {
     return { name: name, params: [], paramTypes: [], isStatic: false, isAbstract: false, isConstructor: false, body: null, cls: null };
   }
 
-  function findMethod(cls, name, argCount) {
-    let cur = cls, candidates = [];
-    while (cur) {
-      const ms = cur.methods.get(name);
-      if (ms) candidates = candidates.concat(ms);
-      cur = cur.sup;
+  // 参数个数相同时，按实参的运行时类型给候选打分，挑最合适的重载（Java 也是按类型选）
+  const NUM_TYPES = ['int', 'long', 'short', 'byte', 'double', 'float', 'char'];
+  function matchScore(paramTypes, args) {
+    let score = 0;
+    for (let i = 0; i < paramTypes.length && i < args.length; i++) {
+      const pt = String(paramTypes[i] || '');
+      const at = inferType(args[i]);
+      if (at === 'null') continue;                                   // null 可以配任何引用类型
+      if (pt === at) { score += 4; continue; }
+      if (NUM_TYPES.indexOf(pt) >= 0 && NUM_TYPES.indexOf(at) >= 0) { score += 1; continue; }
+      if (pt === 'Object') { score += 1; continue; }
+      if (/^[A-Z]/.test(at) && pt !== at) { score -= 4; continue; }  // 声明的是别的类 → 明显不匹配
+      score -= 1;
     }
+    return score;
+  }
+  function pickBest(list, args) {
+    if (list.length <= 1 || !args || !args.length) return list[0] || null;
+    let best = list[0], bestScore = -Infinity;
+    list.forEach(function (m) {
+      const s = matchScore(m.paramTypes || [], args);
+      if (s > bestScore) { bestScore = s; best = m; }
+    });
+    return best;
+  }
+  function findMethod(cls, name, argCount, args) {
+    let candidates = [];
+    const visited = [];
+    (function collect(c) {
+      if (!c || visited.indexOf(c) >= 0) return;
+      visited.push(c);
+      const ms = c.methods.get(name);
+      if (ms) candidates = candidates.concat(ms);
+      collect(c.sup);                                  // 父类的方法优先于接口的 default 方法
+      (c.interfaces || []).forEach(collect);
+    })(cls);
     if (!candidates.length) return null;
     if (argCount !== undefined && argCount !== null) {
-      for (let i = 0; i < candidates.length; i++) { if (candidates[i].params.length === argCount) return candidates[i]; }
+      const same = candidates.filter(function (m) { return m.params.length === argCount; });
+      if (same.length) return pickBest(same, args);
       for (let i = 0; i < candidates.length; i++) {
         if (candidates[i].varargs && argCount >= candidates[i].params.length - 1) return candidates[i];
       }
@@ -999,7 +1102,7 @@
     if (typeof obj === 'string') return stringMethod(obj, name, args);
     if (obj.__kind === 'strbox') return stringMethod(obj.s, name, args.map(strOf));
     if (obj.__superOf) {
-      const m = findMethod(obj.__cls, name, args.length);
+      const m = findMethod(obj.__cls, name, args.length, args);
       if (m) { const res = invokeMethod(m, obj.__superOf, args, obj.__cls); R.__lastReturnType = m.returnType; return res.v; }
       if (obj.__superOf[name] !== undefined && typeof obj.__superOf[name] !== 'function') return obj.__superOf[name];
       throw exc('Error', '父类没有方法 ' + name);
@@ -1030,12 +1133,12 @@
     }
     if (obj.__clsObj) {
       if (obj.statics.has(name)) { const v = obj.statics.get(name); if (typeof v === 'function') return v.apply(null, args); return v; }
-      const m = findMethod(obj, name, args.length);
+      const m = findMethod(obj, name, args.length, args);
       if (m) { const res = invokeMethod(m, null, args, obj); R.__lastReturnType = m.returnType; return res.v; }
       throw exc('Error', '类 ' + obj.name + ' 没有静态方法 ' + name);
     }
     if (obj.__cls) {
-      const m = findMethod(obj.__cls, name, args.length);
+      const m = findMethod(obj.__cls, name, args.length, args);
       if (m) { const res = invokeMethod(m, obj, args, obj.__cls); R.__lastReturnType = m.returnType; return res.v; }
       if (obj[name] !== undefined && typeof obj[name] === 'function') return obj[name].apply(obj, args);
       if (obj[name] !== undefined) throw exc('Error', name + ' 不是方法');
@@ -1110,7 +1213,22 @@
       });
       cur = cur.sup;
     }
-    const ctor = pickCtor(cls, args.length);
+    // 实例字段的初始值（private int age = 18; 这种）：父类字段先于子类字段，在构造器体之前执行
+    const initChain = [];
+    for (let c2 = cls; c2; c2 = c2.sup) initChain.unshift(c2);
+    initChain.forEach(function (cl) {
+      cl.fields.forEach(function (f) {
+        if (f.isStatic || !f.init) return;
+        if (R.evalInstanceInit) inst[f.name] = R.evalInstanceInit(f, inst, cl);
+      });
+      // 实例初始化块：字段初始化之后、构造器体之前执行
+      if (cl.instBlocks) cl.instBlocks.forEach(function (blk) {
+        const frames = [newFrame()];
+        declare(frames, 'this', inst, cl.name);
+        try { R.execBlock(frames, blk.start, blk.end, inst, cl); } catch (e) { if (!isRet(e)) throw e; }
+      });
+    });
+    const ctor = pickCtor(cls, args.length, args);
     if (ctor) {
       if (ctor.invoke) { ctor.invoke(inst, args); return inst; }
       inst.__ctor = ctor;
@@ -1127,9 +1245,10 @@
     }
     return inst;
   }
-  function pickCtor(cls, argCount) {
+  function pickCtor(cls, argCount, args) {
     if (!cls.ctors.length) return null;
-    for (let i = 0; i < cls.ctors.length; i++) { if (cls.ctors[i].params.length === argCount) return cls.ctors[i]; }
+    const same = cls.ctors.filter(function (c) { return c.params.length === argCount; });
+    if (same.length) return pickBest(same, args);
     return cls.ctors[0];
   }
   function defaultForType(t) {
@@ -1262,6 +1381,11 @@
         cls.sup = classes[cls.supName] || R.exceptionClasses[cls.supName] || null;
       }
     });
+    // 链接接口关系：实现类的 default 方法要靠它才能被找到
+    Object.keys(classes).forEach(function (name) {
+      const cls = classes[name];
+      cls.interfaces = (cls.interfaceNames || []).map(function (n) { return classes[n]; }).filter(Boolean);
+    });
 
     return { tokens: toks, match: match, classes: classes };
   }
@@ -1277,8 +1401,12 @@
       }
       const m = readModifiers(toks, i); i = m.i;
       const flags = m.flags;
-      // 其它初始化块（如实例初始化块 { ... }）
-      if (toks[i].k === 'p' && toks[i].v === '{') { i = match[i] + 1; continue; }
+      // 实例初始化块 { ... }：每次 new 都执行（在构造器体之前）
+      if (toks[i].k === 'p' && toks[i].v === '{') {
+        if (cls.instBlocks) cls.instBlocks.push({ start: i + 1, end: match[i] });
+        i = match[i] + 1;
+        continue;
+      }
 
       if (toks[i].k === 'id' && (toks[i].v === 'class' || toks[i].v === 'interface' || toks[i].v === 'enum')) {
         const kind = toks[i].v; i++;
@@ -1355,7 +1483,9 @@
       while (true) {
         let init = null;
         if (toks[i].k === 'op' && toks[i].v === '=') { i++; const s = i; i = skipExpressionEnd(toks, i); init = { s: s, e: i }; }
-        fieldList.push({ name: name, type: rt.type, isStatic: flags.isStatic, isFinal: flags.isFinal, init: init });
+        // 接口里的字段隐式是 public static final，所以统一按静态字段处理
+        const isIfaceField = !!cls.isInterface;
+        fieldList.push({ name: name, type: rt.type, isStatic: flags.isStatic || isIfaceField, isFinal: flags.isFinal || isIfaceField, init: init });
         if (toks[i].k === 'p' && toks[i].v === ',') {
           i++;
           if (toks[i].k !== 'id') throw new Error('字段名缺失');
@@ -1701,15 +1831,25 @@
       if (t.k === 'op' && t.v === '::') {
         const mn = toks[r.next + 1].v;
         const base = r.v;
-        const isClassRef = base && base.__clsObj;
-        const fn = isClassRef
-          ? function () {
-              const args = Array.prototype.slice.call(arguments);
-              return R.invokeMember(args[0], mn, args.slice(1));
+        // :: 左边可能是「类/工具类」（Integer、String、Math、Student…）也可能是对象（System.out）
+        const isClassRef = !!(base && (base.__clsObj || base.__staticHolder));
+        const fn = function () {
+          const args = Array.prototype.slice.call(arguments);
+          // ① 静态方法引用：Integer::sum / Math::max / String::valueOf（左边自己就带这个方法）
+          if (base && typeof base[mn] === 'function' && !base.__clsObj) return base[mn].apply(base, args);
+          if (isClassRef) {
+            // ② 用户类里的静态方法：MyUtil::helper
+            if (base.__clsObj && base.statics && base.statics.has(mn)) {
+              const v = base.statics.get(mn);
+              if (typeof v === 'function') return v.apply(null, args);
+              return v;
             }
-          : function () {
-              return R.invokeMember(base, mn, Array.prototype.slice.call(arguments));
-            };
+            // ③ 类型名::实例方法：Student::getName / String::toUpperCase（把第一个参数当接收者）
+            return R.invokeMember(args[0], mn, args.slice(1));
+          }
+          // ④ 对象::实例方法：System.out::println
+          return R.invokeMember(base, mn, args);
+        };
         return { v: fn, t: 'fn', next: r.next + 2 };
       }
       if (t.k === 'p' && t.v === '(') {
@@ -2702,6 +2842,13 @@
     const e = evalExpr(CUR().toks, f.init.s, { frames: frames, thisObj: null, selfClass: null });
     return e.v;
   }
+
+  // 实例字段初始值的求值入口（给 construct 调用）：这里能拿到 tokens 和 evalExpr
+  R.evalInstanceInit = function (f, inst, cls) {
+    const frames = [R2.newFrame()];
+    const e = evalExpr(CUR().toks, f.init.s, { frames: frames, thisObj: inst, selfClass: cls });
+    return e.v;
+  };
 
   root.JavaRunner.run = run;
   root.JavaRunner.__run = run;

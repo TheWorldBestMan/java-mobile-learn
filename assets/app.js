@@ -735,8 +735,41 @@ function viewHome() {
 }
 
 /* ---------- 路线图 ---------- */
+// 学习路线页顶部的「Java 构造结构速查」：数据在 content/syntax-map.js
+function syntaxMapHtml() {
+  const sm = window.SYNTAX_MAP;
+  if (!sm || !sm.sections || !sm.sections.length) return '';
+  let html = '<div class="card" id="syntax-map"><h2 class="card-title">📐 ' + esc(sm.title || '构造结构速查') + '</h2>' +
+    '<p class="muted small">' + inline(sm.intro || '') + '</p>' +
+    '<div class="outline">' + sm.sections.map((sec, i) =>
+      '<button class="outline-item" data-goto="sm-' + esc(sec.id || String(i)) + '">' + esc(sec.title) + '</button>').join('') +
+    '</div>' +
+    '<div class="small faint mt-1">下面是速查版骨架；完整讲解在对应章节里：第 7 章讲方法的全部写法，第 8 / 9 章讲类的成员与构造器，第 10 章讲类型声明，第 12 / 15 章讲集合怎么装自己的类、Map 与 lambda 搭配。</div></div>';
+  sm.sections.forEach((sec, i) => {
+    const anchor = 'sm-' + (sec.id || i);
+    html += '<div class="card" id="' + esc(anchor) + '"><h2 class="card-title">' + esc(sec.title) + '</h2>';
+    if (sec.note) html += '<p class="small muted">' + inline(sec.note) + '</p>';
+    if (sec.type === 'table') html += tableBlock(sec.head, sec.rows);
+    else if (sec.type === 'list') html += '<ul class="lesson-list">' + sec.items.map(x => '<li>' + inline(x) + '</li>').join('') + '</ul>';
+    else if (sec.type === 'code') {
+      if (sec.runnable) {
+        const key = 'syntax#' + (sec.id || i);
+        const plan = lessonRunPlan(sec.code);
+        LESSON_RUN[key] = { code: sec.code, plan: plan, needsInput: false };
+        html += codeBlock(sec.code, sec.codeTitle || '示例代码', { runKey: key, runnable: !!plan, needsInput: false, inputHint: '' });
+      } else {
+        html += codeBlock(sec.code, sec.codeTitle || '示例代码', {});
+      }
+      if (sec.output) html += '<div class="small faint mt-1">运行结果：</div><pre class="run-out">' + esc(sec.output) + '</pre>';
+    }
+    html += '</div>';
+  });
+  return html;
+}
+
 function viewRoadmap() {
   let html = '<h1 class="page-title">学习路线图</h1><p class="page-sub">从零基础到能独立做出 Android App 的完整路径。点击任意章节可以直接进入。</p>';
+  html += syntaxMapHtml();
 
   MODULES.forEach((mod, mi) => {
     const doneCount = mod.chapters.filter(c => chapterDone(c.id)).length;
@@ -772,6 +805,13 @@ function viewRoadmap() {
 
   setMain(html);
   qsa('[data-href]').forEach(b => { b.onclick = () => { location.hash = b.getAttribute('data-href'); }; });
+  qsa('[data-goto]').forEach(btn => {
+    btn.onclick = () => {
+      const target = document.getElementById(btn.getAttribute('data-goto'));
+      if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+  });
+  bindLessonRunButtons();
 }
 
 /* ---------- 章节页 ---------- */
@@ -867,15 +907,15 @@ function quizHtml(ch) {
   return html;
 }
 
-function bindChapter(ch) {
-  const cs = chapterState(ch.id);
-
+// 讲解示例 / 速查卡片的「▶ 运行」按钮统一在这里绑定（key 形如 章节id#序号）
+function bindLessonRunButtons() {
   qsa('[data-lessonrun]').forEach(btn => {
     btn.onclick = () => {
       const key = btn.getAttribute('data-lessonrun');
       const item = LESSON_RUN[key];
       const box = document.querySelector('[data-lessonout="' + key + '"]');
       if (!item || !box) return;
+      const chId = key.split('#')[0];
       const inputEl = document.querySelector('[data-lessonin="' + key + '"]');
       const input = inputEl ? inputEl.value : '';
       if (item.needsInput && !input.trim()) {
@@ -883,7 +923,7 @@ function bindChapter(ch) {
         box.innerHTML = '<div class="callout tip" style="margin:0">这段示例需要键盘输入：请先在上面的输入框里填写数据（每行一条），再点“▶ 运行”。</div>';
         return;
       }
-      const res = runJavaWithDeps(item.plan.code, input, ch.id, getLibraryFiles());
+      const res = runJavaWithDeps(item.plan.code, input, chId, getLibraryFiles());
       let html = '<div class="small faint">程序输出（System.out）</div>';
       if (res.output) {
         html += '<pre class="run-out">' + esc(res.output.replace(/\n$/, '')) + '</pre>';
@@ -903,6 +943,12 @@ function bindChapter(ch) {
       box.style.display = 'block';
     };
   });
+}
+
+function bindChapter(ch) {
+  const cs = chapterState(ch.id);
+
+  bindLessonRunButtons();
 
   qsa('[data-goto]').forEach(btn => {
     btn.onclick = () => {
